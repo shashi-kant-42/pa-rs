@@ -56,6 +56,14 @@ where
         MapRef(self, f)
     }
 
+    fn optional(self) -> Optional<Self> {
+        Optional(self)
+    }
+
+    fn optional_ref<'a>(&'a self) -> OptionalRef<'a, Self> {
+        OptionalRef(&self)
+    }
+
     fn zero_or_more(self) -> ZeroOrMoreOf<Self> {
         ZeroOrMoreOf(self)
     }
@@ -285,6 +293,36 @@ impl<'a, T: Parse> Parse for OneOfRef<'a, T> {
             }
         }
         Err(error)
+    }
+}
+
+pub struct Optional<T: Parse>(T);
+
+impl<T: Parse> Parse for Optional<T> {
+    type Result = Option<<T as Parse>::Result>;
+
+    fn parse<'b>(&self, input: &'b str) -> ParseResult<'b, Self::Result> {
+        OptionalRef(&self.0).parse(input)
+    }
+}
+
+pub struct OptionalRef<'a, T: Parse>(&'a T);
+
+impl<'a, T: Parse> Parse for OptionalRef<'a, T> {
+    type Result = Option<<T as Parse>::Result>;
+
+    fn parse<'b>(&self, mut input: &'b str) -> ParseResult<'b, Self::Result> {
+        let mut optional_result = None;
+        if let Ok(ParseOk {
+            result,
+            input: input1
+        }) = self.0.parse(input)
+        {
+            optional_result = Some(result);
+            input = input1;
+        }
+
+        Ok(ParseOk::new(optional_result, input))
     }
 }
 

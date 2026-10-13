@@ -92,6 +92,12 @@ mod tests {
     }
 
     #[test]
+    fn test_optional() {
+        assert_eq!(char_p('a').optional().run(""), Ok(None));
+        assert_eq!(char_p('a').optional().run("abc"), Ok(Some('a')));
+    }
+
+    #[test]
     fn test_list_of_p() {
         let parse_list_of_float = list_square_p(float_p());
 
