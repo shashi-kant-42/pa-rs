@@ -21,6 +21,17 @@ impl<'a> Input<'a> {
     fn as_str(&'a self) -> &'a str {
         &self.string[self.offset..]
     }
+
+    fn get_pos(&self) -> (usize, usize) {
+        let parsed = &self.string[..self.offset];
+        let mut lines = 0;
+        let mut chars = parsed.len();
+        for line in parsed.split('\n') {
+            lines += 1;
+            chars = line.len();
+        }
+        (lines, chars)
+    }
 }
 
 pub struct ParseOk<'a, T> {
@@ -167,7 +178,8 @@ impl Parse for CharParser {
                         input: input.offset(1),
                     })
                 } else {
-                    Err(format!("Expected {:?} but found {:?}", self.0, ch))
+                    let (line, char) = input.get_pos();
+                    Err(format!("Expected {:?} but found {:?} at line {line}, char {char}", self.0, ch))
                 }
             }
             None => Err(format!("No Characters left to parse")),
