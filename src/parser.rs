@@ -28,7 +28,7 @@ impl<'a> Input<'a> {
         let mut chars = parsed.len();
         for line in parsed.split('\n') {
             lines += 1;
-            chars = line.len();
+            chars = line.len() + 1;
         }
         (lines, chars)
     }
