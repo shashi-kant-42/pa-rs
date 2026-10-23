@@ -496,9 +496,9 @@ impl<'a, T: Parse> Parse for SbwsRef<'a, T> {
     type Result = <T as Parse>::Result;
 
     fn parse<'b>(&self, input: Input<'b>) -> ParseResult<'b, Self::Result> {
-        let ParseOk { input, .. } = WhitespaceParser.parse(input)?;
+        let ParseOk { input, .. } = WhitespaceParser.zero_or_more().parse(input)?;
         let ParseOk { result, input } = self.0.parse(input)?;
-        let ParseOk { input, .. } = WhitespaceParser.parse(input)?;
+        let ParseOk { input, .. } = WhitespaceParser.zero_or_more().parse(input)?;
         Ok(ParseOk { result, input })
     }
 }
