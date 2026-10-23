@@ -6,13 +6,30 @@ pub enum Either<T, U> {
     Right(U),
 }
 
+#[derive(Clone, Copy)]
+pub struct Input<'a> {
+    string: &'a str,
+    offset: usize,
+}
+
+impl<'a> Input<'a> {
+    fn offset(mut self, offset: usize) -> Self {
+        self.offset += offset;
+        self
+    }
+
+    fn as_str(&'a self) -> &'a str {
+        &self.string[self.offset..]
+    }
+}
+
 pub struct ParseOk<'a, T> {
     result: T,
-    input: &'a str,
+    input: Input<'a>,
 }
 
 impl<'a, T> ParseOk<'a, T> {
-    fn new(result: T, input: &'a str) -> Self {
+    fn new(result: T, input: Input<'a>) -> Self {
         ParseOk { result, input }
     }
 }
@@ -26,9 +43,10 @@ where
 {
     type Result;
 
-    fn parse<'b>(&self, input: &'b str) -> ParseResult<'b, Self::Result>;
+    fn parse<'b>(&self, input: Input<'b>) -> ParseResult<'b, Self::Result>;
 
     fn run(&self, input: &str) -> Result<Self::Result, String> {
+        let input = Input { string: input, offset: 0 };
         self.parse(input).map(|x| x.result)
     }
 
@@ -129,7 +147,7 @@ pub struct NullParser;
 impl Parse for NullParser {
     type Result = ();
 
-    fn parse<'a>(&self, input: &'a str) -> ParseResult<'a, Self::Result> {
+    fn parse<'a>(&self, input: Input<'a>) -> ParseResult<'a, Self::Result> {
         Ok(ParseOk::new((), input))
     }
 }
@@ -139,14 +157,14 @@ pub struct CharParser(char);
 impl Parse for CharParser {
     type Result = char;
 
-    fn parse<'a>(&self, input: &'a str) -> ParseResult<'a, Self::Result> {
-        match input.as_bytes().get(0) {
+    fn parse<'a>(&self, input: Input<'a>) -> ParseResult<'a, Self::Result> {
+        match input.as_str().as_bytes().get(0) {
             Some(x) => {
                 let ch = *x as char;
                 if ch == self.0 {
                     Ok(ParseOk {
                         result: ch,
-                        input: &input[1..],
+                        input: input.offset(1),
                     })
                 } else {
                     Err(format!("Expected {:?} but found {:?}", self.0, ch))
@@ -162,11 +180,11 @@ pub struct AnyCharParser;
 impl Parse for AnyCharParser {
     type Result = char;
 
-    fn parse<'b>(&self, input: &'b str) -> ParseResult<'b, Self::Result> {
-        match input.as_bytes().get(0) {
+    fn parse<'b>(&self, input: Input<'b>) -> ParseResult<'b, Self::Result> {
+        match input.as_str().as_bytes().get(0) {
             Some(&ch) => Ok(ParseOk {
                 result: ch as char,
-                input: &input[1..],
+                input: input.offset(1),
             }),
             None => Err(format!("No Input left to parse")),
         }
@@ -178,7 +196,7 @@ pub struct And<T: Parse, U: Parse>(T, U);
 impl<T: Parse, U: Parse> Parse for And<T, U> {
     type Result = (<T as Parse>::Result, <U as Parse>::Result);
 
-    fn parse<'b>(&self, input: &'b str) -> ParseResult<'b, Self::Result> {
+    fn parse<'b>(&self, input: Input<'b>) -> ParseResult<'b, Self::Result> {
         AndRef(&self.0, &self.1).parse(input)
     }
 }
@@ -187,7 +205,7 @@ pub struct AndRef<'a, T: Parse, U: Parse>(&'a T, &'a U);
 impl<'a, T: Parse, U: Parse> Parse for AndRef<'a, T, U> {
     type Result = (<T as Parse>::Result, <U as Parse>::Result);
 
-    fn parse<'b>(&self, input: &'b str) -> ParseResult<'b, Self::Result> {
+    fn parse<'b>(&self, input: Input<'b>) -> ParseResult<'b, Self::Result> {
         let ParseOk { result: lhs, input } = self.0.parse(input)?;
         let ParseOk { result: rhs, input } = self.1.parse(input)?;
         Ok(ParseOk::new((lhs, rhs), input))
@@ -199,7 +217,7 @@ pub struct Or<T: Parse, U: Parse>(T, U);
 impl<T: Parse, U: Parse> Parse for Or<T, U> {
     type Result = Either<<T as Parse>::Result, <U as Parse>::Result>;
 
-    fn parse<'b>(&self, input: &'b str) -> ParseResult<'b, Self::Result> {
+    fn parse<'b>(&self, input: Input<'b>) -> ParseResult<'b, Self::Result> {
         OrRef(&self.0, &self.1).parse(input)
     }
 }
@@ -209,7 +227,7 @@ pub struct OrRef<'a, T: Parse, U: Parse>(&'a T, &'a U);
 impl<'a, T: Parse, U: Parse> Parse for OrRef<'a, T, U> {
     type Result = Either<<T as Parse>::Result, <U as Parse>::Result>;
 
-    fn parse<'b>(&self, input: &'b str) -> ParseResult<'b, Self::Result> {
+    fn parse<'b>(&self, input: Input<'b>) -> ParseResult<'b, Self::Result> {
         match self.0.parse(input) {
             Ok(ParseOk { result, input }) => Ok(ParseOk::new(Either::Left(result), input)),
             _ => match self.1.parse(input) {
@@ -225,7 +243,7 @@ pub struct Map<T: Parse, F: Fn(<T as Parse>::Result) -> U, U>(T, F);
 impl<T: Parse, U: PartialEq + Debug, F: Fn(<T as Parse>::Result) -> U> Parse for Map<T, F, U> {
     type Result = U;
 
-    fn parse<'b>(&self, input: &'b str) -> ParseResult<'b, Self::Result> {
+    fn parse<'b>(&self, input: Input<'b>) -> ParseResult<'b, Self::Result> {
         MapRef(&self.0, &self.1).parse(input)
     }
 }
@@ -237,7 +255,7 @@ impl<'a, T: Parse, U: PartialEq + Debug, F: Fn(<T as Parse>::Result) -> U> Parse
 {
     type Result = U;
 
-    fn parse<'b>(&self, input: &'b str) -> ParseResult<'b, Self::Result> {
+    fn parse<'b>(&self, input: Input<'b>) -> ParseResult<'b, Self::Result> {
         let ParseOk { result, input } = self.0.parse(input)?;
         Ok(ParseOk::new((self.1)(result), input))
     }
@@ -248,7 +266,7 @@ pub struct AllOf<T: Parse>(Vec<T>);
 impl<T: Parse> Parse for AllOf<T> {
     type Result = Vec<<T as Parse>::Result>;
 
-    fn parse<'b>(&self, input: &'b str) -> ParseResult<'b, Self::Result> {
+    fn parse<'b>(&self, input: Input<'b>) -> ParseResult<'b, Self::Result> {
         AllOfRef(&self.0).parse(input)
     }
 }
@@ -258,7 +276,7 @@ pub struct AllOfRef<'a, T: Parse>(&'a Vec<T>);
 impl<'a, T: Parse> Parse for AllOfRef<'a, T> {
     type Result = Vec<<T as Parse>::Result>;
 
-    fn parse<'b>(&self, input: &'b str) -> ParseResult<'b, Self::Result> {
+    fn parse<'b>(&self, input: Input<'b>) -> ParseResult<'b, Self::Result> {
         let mut results = ParseOk::new(vec![], input);
         for parser in self.0.iter() {
             let ParseOk { result, input } = parser.parse(results.input)?;
@@ -275,7 +293,7 @@ pub struct OneOf<T: Parse>(Vec<T>);
 impl<T: Parse> Parse for OneOf<T> {
     type Result = <T as Parse>::Result;
 
-    fn parse<'b>(&self, input: &'b str) -> ParseResult<'b, Self::Result> {
+    fn parse<'b>(&self, input: Input<'b>) -> ParseResult<'b, Self::Result> {
         OneOfRef(&self.0).parse(input)
     }
 }
@@ -284,7 +302,7 @@ pub struct OneOfRef<'a, T: Parse>(&'a Vec<T>);
 impl<'a, T: Parse> Parse for OneOfRef<'a, T> {
     type Result = <T as Parse>::Result;
 
-    fn parse<'b>(&self, input: &'b str) -> ParseResult<'b, Self::Result> {
+    fn parse<'b>(&self, input: Input<'b>) -> ParseResult<'b, Self::Result> {
         let mut error = "Nothing to parse".into();
         for parser in self.0.iter() {
             match parser.parse(input) {
@@ -301,7 +319,7 @@ pub struct Optional<T: Parse>(T);
 impl<T: Parse> Parse for Optional<T> {
     type Result = Option<<T as Parse>::Result>;
 
-    fn parse<'b>(&self, input: &'b str) -> ParseResult<'b, Self::Result> {
+    fn parse<'b>(&self, input: Input<'b>) -> ParseResult<'b, Self::Result> {
         OptionalRef(&self.0).parse(input)
     }
 }
@@ -311,7 +329,7 @@ pub struct OptionalRef<'a, T: Parse>(&'a T);
 impl<'a, T: Parse> Parse for OptionalRef<'a, T> {
     type Result = Option<<T as Parse>::Result>;
 
-    fn parse<'b>(&self, mut input: &'b str) -> ParseResult<'b, Self::Result> {
+    fn parse<'b>(&self, mut input: Input<'b>) -> ParseResult<'b, Self::Result> {
         let mut optional_result = None;
         if let Ok(ParseOk {
             result,
@@ -331,7 +349,7 @@ pub struct ZeroOrMoreOf<T: Parse>(T);
 impl<T: Parse> Parse for ZeroOrMoreOf<T> {
     type Result = Vec<<T as Parse>::Result>;
 
-    fn parse<'b>(&self, input: &'b str) -> ParseResult<'b, Self::Result> {
+    fn parse<'b>(&self, input: Input<'b>) -> ParseResult<'b, Self::Result> {
         ZeroOrMoreOfRef(&self.0).parse(input)
     }
 }
@@ -341,7 +359,7 @@ pub struct ZeroOrMoreOfRef<'a, T: Parse>(&'a T);
 impl<'a, T: Parse> Parse for ZeroOrMoreOfRef<'a, T> {
     type Result = Vec<<T as Parse>::Result>;
 
-    fn parse<'b>(&self, mut input: &'b str) -> ParseResult<'b, Self::Result> {
+    fn parse<'b>(&self, mut input: Input<'b>) -> ParseResult<'b, Self::Result> {
         let mut results = vec![];
         while let Ok(ParseOk {
             result,
@@ -361,7 +379,7 @@ pub struct OneOrMoreOf<T: Parse>(T);
 impl<T: Parse> Parse for OneOrMoreOf<T> {
     type Result = Vec<<T as Parse>::Result>;
 
-    fn parse<'b>(&self, input: &'b str) -> ParseResult<'b, Self::Result> {
+    fn parse<'b>(&self, input: Input<'b>) -> ParseResult<'b, Self::Result> {
         OneOrMoreOfRef(&self.0).parse(input)
     }
 }
@@ -371,7 +389,7 @@ pub struct OneOrMoreOfRef<'a, T: Parse>(&'a T);
 impl<'a, T: Parse> Parse for OneOrMoreOfRef<'a, T> {
     type Result = Vec<<T as Parse>::Result>;
 
-    fn parse<'b>(&self, input: &'b str) -> ParseResult<'b, Self::Result> {
+    fn parse<'b>(&self, input: Input<'b>) -> ParseResult<'b, Self::Result> {
         let ParseOk { result, mut input } = self.0.parse(input)?;
         let mut results = vec![result];
 
@@ -393,7 +411,7 @@ pub struct Drop<T: Parse, U: Parse>(T, U);
 impl<T: Parse, U: Parse> Parse for Drop<T, U> {
     type Result = <U as Parse>::Result;
 
-    fn parse<'a>(&self, input: &'a str) -> ParseResult<'a, Self::Result> {
+    fn parse<'a>(&self, input: Input<'a>) -> ParseResult<'a, Self::Result> {
         DropRef(&self.0, &self.1).parse(input)
     }
 }
@@ -403,7 +421,7 @@ pub struct DropRef<'a, T: Parse, U: Parse>(&'a T, &'a U);
 impl<'a, T: Parse, U: Parse> Parse for DropRef<'a, T, U> {
     type Result = <U as Parse>::Result;
 
-    fn parse<'b>(&self, input: &'b str) -> ParseResult<'b, Self::Result> {
+    fn parse<'b>(&self, input: Input<'b>) -> ParseResult<'b, Self::Result> {
         let ParseOk { input, .. } = self.0.parse(input)?;
         self.1.parse(input)
     }
@@ -414,7 +432,7 @@ pub struct Keep<T: Parse, U: Parse>(T, U);
 impl<T: Parse, U: Parse> Parse for Keep<T, U> {
     type Result = <T as Parse>::Result;
 
-    fn parse<'a>(&self, input: &'a str) -> ParseResult<'a, Self::Result> {
+    fn parse<'a>(&self, input: Input<'a>) -> ParseResult<'a, Self::Result> {
         KeepRef(&self.0, &self.1).parse(input)
     }
 }
@@ -424,7 +442,7 @@ pub struct KeepRef<'a, T: Parse, U: Parse>(&'a T, &'a U);
 impl<'a, T: Parse, U: Parse> Parse for KeepRef<'a, T, U> {
     type Result = <T as Parse>::Result;
 
-    fn parse<'b>(&self, input: &'b str) -> ParseResult<'b, Self::Result> {
+    fn parse<'b>(&self, input: Input<'b>) -> ParseResult<'b, Self::Result> {
         let ParseOk { result, input } = self.0.parse(input)?;
         let ParseOk { input, .. } = self.1.parse(input)?;
         Ok(ParseOk { result, input })
@@ -436,7 +454,7 @@ pub struct WhitespaceParser;
 impl Parse for WhitespaceParser {
     type Result = String;
 
-    fn parse<'a>(&self, mut input: &'a str) -> ParseResult<'a, Self::Result> {
+    fn parse<'a>(&self, mut input: Input<'a>) -> ParseResult<'a, Self::Result> {
         let mut ws = String::new();
         while let Ok(ParseOk {
             result,
@@ -455,7 +473,7 @@ pub struct Sbws<T: Parse>(T);
 impl<T: Parse> Parse for Sbws<T> {
     type Result = <T as Parse>::Result;
 
-    fn parse<'a>(&self, input: &'a str) -> ParseResult<'a, Self::Result> {
+    fn parse<'a>(&self, input: Input<'a>) -> ParseResult<'a, Self::Result> {
         SbwsRef(&self.0).parse(input)
     }
 }
@@ -465,7 +483,7 @@ pub struct SbwsRef<'a, T: Parse>(&'a T);
 impl<'a, T: Parse> Parse for SbwsRef<'a, T> {
     type Result = <T as Parse>::Result;
 
-    fn parse<'b>(&self, input: &'b str) -> ParseResult<'b, Self::Result> {
+    fn parse<'b>(&self, input: Input<'b>) -> ParseResult<'b, Self::Result> {
         let ParseOk { input, .. } = WhitespaceParser.parse(input)?;
         let ParseOk { result, input } = self.0.parse(input)?;
         let ParseOk { input, .. } = WhitespaceParser.parse(input)?;
@@ -478,7 +496,7 @@ pub struct SepBy<T: Parse>(T, char);
 impl<T: Parse> Parse for SepBy<T> {
     type Result = Vec<<T as Parse>::Result>;
 
-    fn parse<'a>(&self, input: &'a str) -> ParseResult<'a, Self::Result> {
+    fn parse<'a>(&self, input: Input<'a>) -> ParseResult<'a, Self::Result> {
         SepByRef(&self.0, self.1).parse(input)
     }
 }
@@ -488,7 +506,7 @@ pub struct SepByRef<'a, T: Parse>(&'a T, char);
 impl<'b, T: Parse> Parse for SepByRef<'b, T> {
     type Result = Vec<<T as Parse>::Result>;
 
-    fn parse<'a>(&self, input: &'a str) -> ParseResult<'a, Self::Result> {
+    fn parse<'a>(&self, input: Input<'a>) -> ParseResult<'a, Self::Result> {
         self.0
             .sbws_ref()
             .keep_ref(&CharParser(self.1).sbws())
@@ -507,7 +525,7 @@ pub struct ParseSquareList<T: Parse>(T);
 impl<T: Parse> Parse for ParseSquareList<T> {
     type Result = Vec<<T as Parse>::Result>;
 
-    fn parse<'a>(&self, input: &'a str) -> ParseResult<'a, Self::Result> {
+    fn parse<'a>(&self, input: Input<'a>) -> ParseResult<'a, Self::Result> {
         ParseSquareListRef(&self.0).parse(input)
     }
 }
@@ -517,7 +535,7 @@ pub struct ParseSquareListRef<'a, T: Parse>(&'a T);
 impl<'a, T: Parse> Parse for ParseSquareListRef<'a, T> {
     type Result = Vec<<T as Parse>::Result>;
 
-    fn parse<'b>(&self, input: &'b str) -> ParseResult<'b, Self::Result> {
+    fn parse<'b>(&self, input: Input<'b>) -> ParseResult<'b, Self::Result> {
         CharParser('[')
             .drop(
                 self.0
@@ -540,7 +558,7 @@ pub struct ParseWhile<T: Parse, F: Fn(&'_ <T as Parse>::Result) -> bool>(T, F);
 impl<'a, T: Parse, F: Fn(&'_ <T as Parse>::Result) -> bool> Parse for ParseWhile<T, F> {
     type Result = Vec<<T as Parse>::Result>;
 
-    fn parse<'b>(&self, input: &'b str) -> ParseResult<'b, Self::Result> {
+    fn parse<'b>(&self, input: Input<'b>) -> ParseResult<'b, Self::Result> {
         ParseWhileRef(&self.0, &self.1).parse(input)
     }
 }
@@ -550,7 +568,7 @@ pub struct ParseWhileRef<'a, T: Parse, F: Fn(&'_ <T as Parse>::Result) -> bool>(
 impl<'a, T: Parse, F: Fn(&'_ <T as Parse>::Result) -> bool> Parse for ParseWhileRef<'a, T, F> {
     type Result = Vec<<T as Parse>::Result>;
 
-    fn parse<'b>(&self, mut input: &'b str) -> ParseResult<'b, Self::Result> {
+    fn parse<'b>(&self, mut input: Input<'b>) -> ParseResult<'b, Self::Result> {
         let mut results = vec![];
 
         while let Ok(ParseOk {
@@ -576,7 +594,7 @@ pub struct StringParser(String);
 impl Parse for StringParser {
     type Result = String;
 
-    fn parse<'b>(&self, mut input: &'b str) -> ParseResult<'b, Self::Result> {
+    fn parse<'b>(&self, mut input: Input<'b>) -> ParseResult<'b, Self::Result> {
         for ch in self.0.chars() {
             let ParseOk { input: input1, .. } = CharParser(ch).parse(input)?;
             input = input1;

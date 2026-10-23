@@ -2,7 +2,7 @@
 name = "pa-rs"
 license = "MIT"
 version = "0.1.7"
-authors = ["Shashi Kant <shashitnak42@proton.me"]
+authors = ["Shashi Kant <shashikant42@proton.me"]
 edition = "2021"
 description = "Parsing library using concepts of Parser combinators"
 repository = "https://github.com/shashi-kant-42/pa-rs"
