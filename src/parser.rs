@@ -638,13 +638,13 @@ pub struct SurroundedBy<T> {
     end: char,
 }
 
-impl<T: Parse + Debug + PartialEq + Clone> Parse for SurroundedBy<T> {
+impl<T: Parse + Debug + PartialEq> Parse for SurroundedBy<T> {
     type Result = <T as Parse>::Result;
 
     fn parse<'b>(&self, input: Input<'b>) -> ParseResult<'b, Self::Result> {
-        char_p(self.start)
-            .drop(self.body.clone())
-            .keep(char_p(self.end))
+        CharParser(self.start)
+            .drop(self.body.sbws_ref())
+            .keep(CharParser(self.end))
             .parse(input)
     }
 }
