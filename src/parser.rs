@@ -155,6 +155,18 @@ where
     fn surrounded_by(self, start: char, end: char) -> SurroundedBy<Self> {
         SurroundedBy { start, body: self, end }
     }
+
+    fn surrounded_by_rb(self) -> SurroundedBy<Self> {
+        SurroundedBy { start: '(', body: self, end: ')' }
+    }
+
+    fn surrounded_by_cb(self) -> SurroundedBy<Self> {
+        SurroundedBy { start: '{', body: self, end: '}' }
+    }
+
+    fn surrounded_by_sb(self) -> SurroundedBy<Self> {
+        SurroundedBy { start: '[', body: self, end: ']' }
+    }
 }
 
 pub struct NullParser;
