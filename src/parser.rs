@@ -638,7 +638,7 @@ pub struct SurroundedBy<T> {
     end: char,
 }
 
-impl<T: Parse + Debug + PartialEq> Parse for SurroundedBy<T> {
+impl<T: Parse> Parse for SurroundedBy<T> {
     type Result = <T as Parse>::Result;
 
     fn parse<'b>(&self, input: Input<'b>) -> ParseResult<'b, Self::Result> {
