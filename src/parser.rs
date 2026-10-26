@@ -151,6 +151,10 @@ where
     ) -> ParseWhileRef<'a, Self, F> {
         ParseWhileRef(self, f)
     }
+
+    fn surrounded_by(self, start: char, end: char) -> SurroundedBy<Self> {
+        SurroundedBy { start, body: self, end }
+    }
 }
 
 pub struct NullParser;
@@ -496,9 +500,9 @@ impl<'a, T: Parse> Parse for SbwsRef<'a, T> {
     type Result = <T as Parse>::Result;
 
     fn parse<'b>(&self, input: Input<'b>) -> ParseResult<'b, Self::Result> {
-        let ParseOk { input, .. } = WhitespaceParser.zero_or_more().parse(input)?;
+        let ParseOk { input, .. } = WhitespaceParser.parse(input)?;
         let ParseOk { result, input } = self.0.parse(input)?;
-        let ParseOk { input, .. } = WhitespaceParser.zero_or_more().parse(input)?;
+        let ParseOk { input, .. } = WhitespaceParser.parse(input)?;
         Ok(ParseOk { result, input })
     }
 }
@@ -613,6 +617,23 @@ impl Parse for StringParser {
         }
 
         Ok(ParseOk::new(self.0.clone(), input))
+    }
+}
+
+pub struct SurroundedBy<T> {
+    start: char,
+    body: T,
+    end: char,
+}
+
+impl<T: Parse + Debug + PartialEq + Clone> Parse for SurroundedBy<T> {
+    type Result = <T as Parse>::Result;
+
+    fn parse<'b>(&self, input: Input<'b>) -> ParseResult<'b, Self::Result> {
+        char_p(self.start)
+            .drop(self.body.clone())
+            .keep(char_p(self.end))
+            .parse(input)
     }
 }
 
