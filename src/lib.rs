@@ -131,4 +131,34 @@ mod tests {
             Ok(format!("ab\n \"c\" \td"))
         );
     }
+
+    #[test]
+    fn test_or_enum() {
+        #[derive(Debug, PartialEq)]
+        enum Vowel {
+            A(char),
+            E(char),
+            I(char),
+            O(char),
+            U(char),
+        }
+
+        let vowels = [
+            ("a", Vowel::A('a')),
+            ("e", Vowel::E('e')),
+            ("i", Vowel::I('i')),
+            ("o", Vowel::O('o')),
+            ("u", Vowel::U('u')),
+        ];
+        for (vowel, actual) in vowels {
+            let observed = char_p('a')
+                .or_enum(Vowel::A)
+                .or(char_p('e'), Vowel::E)
+                .or(char_p('i'), Vowel::I)
+                .or(char_p('o'), Vowel::O)
+                .or(char_p('u'), Vowel::U)
+                .run(vowel);
+            assert_eq!(observed, Ok(actual))
+        }
+    }
 }

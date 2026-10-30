@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, marker::PhantomData};
 
 #[derive(PartialEq, Debug)]
 pub enum Either<T, U> {
@@ -57,7 +57,10 @@ where
     fn parse<'b>(&self, input: Input<'b>) -> ParseResult<'b, Self::Result>;
 
     fn run(&self, input: &str) -> Result<Self::Result, String> {
-        let input = Input { string: input, offset: 0 };
+        let input = Input {
+            string: input,
+            offset: 0,
+        };
         self.parse(input).map(|x| x.result)
     }
 
@@ -77,11 +80,19 @@ where
         OrRef(self, other)
     }
 
+    fn or_enum<A>(self, f: fn(<Self as Parse>::Result) -> A) -> OrEnum<Self, A, Nil> {
+        OrEnum {
+            node: self,
+            result: f,
+            next: Nil,
+        }
+    }
+
     fn map<U, F: Fn(Self::Result) -> U>(self, f: F) -> Map<Self, F, U> {
         Map(self, f)
     }
 
-    fn map_ref<'a, U, F: Fn(Self::Result) -> U>(&'a self, f: &'a F) -> MapRef<'a, Self, F, U> {
+    fn map_ref<'a, U, F: Fn(Self::Result) -> U>(&'a self, f: F) -> MapRef<'a, Self, F, U> {
         MapRef(self, f)
     }
 
@@ -153,19 +164,35 @@ where
     }
 
     fn surrounded_by(self, start: char, end: char) -> SurroundedBy<Self> {
-        SurroundedBy { start, body: self, end }
+        SurroundedBy {
+            start,
+            body: self,
+            end,
+        }
     }
 
     fn surrounded_by_rb(self) -> SurroundedBy<Self> {
-        SurroundedBy { start: '(', body: self, end: ')' }
+        SurroundedBy {
+            start: '(',
+            body: self,
+            end: ')',
+        }
     }
 
     fn surrounded_by_cb(self) -> SurroundedBy<Self> {
-        SurroundedBy { start: '{', body: self, end: '}' }
+        SurroundedBy {
+            start: '{',
+            body: self,
+            end: '}',
+        }
     }
 
     fn surrounded_by_sb(self) -> SurroundedBy<Self> {
-        SurroundedBy { start: '[', body: self, end: ']' }
+        SurroundedBy {
+            start: '[',
+            body: self,
+            end: ']',
+        }
     }
 }
 
@@ -195,7 +222,10 @@ impl Parse for CharParser {
                     })
                 } else {
                     let (line, char) = input.get_pos();
-                    Err(format!("Expected {:?} but found {:?} at line {line}, char {char}", self.0, ch))
+                    Err(format!(
+                        "Expected {:?} but found {:?} at line {line}, char {char}",
+                        self.0, ch
+                    ))
                 }
             }
             None => Err(format!("No Characters left to parse")),
@@ -276,7 +306,7 @@ impl<T: Parse, U: PartialEq + Debug, F: Fn(<T as Parse>::Result) -> U> Parse for
     }
 }
 
-pub struct MapRef<'a, T: Parse, F: Fn(<T as Parse>::Result) -> U, U>(&'a T, &'a F);
+pub struct MapRef<'a, T: Parse, F: Fn(<T as Parse>::Result) -> U, U>(&'a T, F);
 
 impl<'a, T: Parse, U: PartialEq + Debug, F: Fn(<T as Parse>::Result) -> U> Parse
     for MapRef<'a, T, F, U>
@@ -361,7 +391,7 @@ impl<'a, T: Parse> Parse for OptionalRef<'a, T> {
         let mut optional_result = None;
         if let Ok(ParseOk {
             result,
-            input: input1
+            input: input1,
         }) = self.0.parse(input)
         {
             optional_result = Some(result);
@@ -648,6 +678,75 @@ impl<T: Parse> Parse for SurroundedBy<T> {
             .parse(input)
     }
 }
+
+pub trait OrList {}
+
+#[derive(Debug, PartialEq)]
+pub struct Nil;
+impl OrList for Nil {}
+
+#[derive(Debug, PartialEq)]
+pub struct Cons<T, U>(T, U);
+
+impl<T, U: OrList> OrList for Cons<T, U> {}
+
+pub struct OrEnum<T: Parse, A, U> {
+    node: T,
+    result: fn(<T as Parse>::Result) -> A,
+    next: U,
+}
+
+impl<T: Parse, A, U> OrEnum<T, A, U> {
+    pub fn or<T1: Parse>(self, t: T1, f: fn(<T1 as Parse>::Result) -> A) -> OrEnum<T1, A, Self> {
+        OrEnum {
+            node: t,
+            result: f,
+            next: self,
+        }
+    }
+}
+
+impl<T: Parse, A: Debug + PartialEq> Parse for OrEnum<T, A, Nil> {
+    type Result = A;
+
+    fn parse<'b>(&self, input: Input<'b>) -> ParseResult<'b, Self::Result> {
+        let result = self.node.parse(input);
+        match result {
+            Ok(ParseOk { result, input }) => Ok(ParseOk {
+                result: (self.result)(result),
+                input,
+            }),
+            Err(err) => Err(err),
+        }
+    }
+}
+
+impl<T: Parse, A: Debug + PartialEq, U: Parse<Result = A>> Parse for OrEnum<T, A, U> {
+    type Result = A;
+
+    fn parse<'b>(&self, input: Input<'b>) -> ParseResult<'b, Self::Result> {
+        let result = self.node.parse(input);
+        match result {
+            Ok(ParseOk { result, input }) => Ok(ParseOk {
+                result: (self.result)(result),
+                input,
+            }),
+            Err(_err) => self.next.parse(input),
+        }
+    }
+}
+
+// impl<T: Parse, U: Parse, V: Parse> Parse for OrEnum<T, OrEnum<U, V>> {
+//     type Result = (Option<<T as Parse>::Result>, (Option<<U as Parse>::Result>, Option<<V as Parse>::Result>));
+
+//     fn parse<'b>(&self, input: Input<'b>) -> ParseResult<'b, Self::Result> {
+//         self.0.or_ref(&self.1).map(|either| match either {
+//             Either::None => (Some(t), (None, None)),
+//             Either::Right(uv) => (None, uv)
+//         })
+//         .parse(input)
+//     }
+// }
 
 pub fn char_p(ch: char) -> CharParser {
     CharParser(ch)
