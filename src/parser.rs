@@ -249,6 +249,23 @@ impl Parse for AnyCharParser {
     }
 }
 
+pub struct AnyCharParserExcept<const N: usize>([u8; N]);
+
+impl<const N: usize> Parse for AnyCharParserExcept<N> {
+    type Result = char;
+
+    fn parse<'b>(&self, input: Input<'b>) -> ParseResult<'b, Self::Result> {
+        match input.as_str().as_bytes().get(0) {
+            Some(&ch) if self.0.iter().any(|&ch1| ch1 != ch) => Ok(ParseOk {
+                result: ch as char,
+                input: input.offset(1),
+            }),
+            Some(&ch) => Err(format!("Did not expect {ch}!")),
+            None => Err(format!("No Input left to parse!")),
+        }
+    }
+}
+
 pub struct And<T: Parse, U: Parse>(T, U);
 
 impl<T: Parse, U: Parse> Parse for And<T, U> {
@@ -754,6 +771,14 @@ pub fn char_p(ch: char) -> CharParser {
 
 pub fn any_char_p() -> AnyCharParser {
     AnyCharParser
+}
+
+pub fn any_char_except<const N: usize>(except: [char; N]) -> AnyCharParserExcept<N> {
+    let mut except1: [u8; N] = [0u8; N];
+    for i in 0..N {
+        except1[i] = except[i] as u8;
+    }
+    AnyCharParserExcept(except1)
 }
 
 pub fn str_p(st: &str) -> StringParser {
